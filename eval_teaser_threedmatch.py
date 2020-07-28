@@ -17,7 +17,8 @@ NOISE_BOUND = 0.1
 VOXEL_SIZE = 0.5
 ICP_TH = 0.05
 TIM_INLIER_RATIO_TH = 0.8
-RANSAC_MAXITERS = int(1e5)
+RANSAC_MAXITERS_LOW = int(1e5)
+RANSAC_MAXITERS_HIGH = int(1e6) # run RANSAC one million times
 
 # obtain all training pairs in the training data
 threedmatch_path = '../../Datasets/threedmatch'
@@ -25,7 +26,7 @@ pairs_all, pairs_30, pairs_50, pairs_70 = \
     get3DMatchTrainPairs(threedmatch_path)
 
 # choose the catagory of pairs to register
-pairs_register = pairs_70[:500]
+pairs_register = pairs_70
 
 # start registering
 # GT transformation (A and B are already registered)
@@ -35,12 +36,18 @@ nrPairs = len(pairs_register)
 print(f'Total number of pairs to register: {nrPairs}.')
 # things to log:
 # overlap rate
-# R_err_ransac, t_err_ransac
-# R_err_icp_ransac, t_err_icp_ransac
+# R_err_ransac_low, t_err_ransac_low
+# R_err_icp_ransac_low, t_err_icp_ransac_low
+# R_err_ransac_high, t_err_ransac_high
+# R_err_icp_ransac_high, t_err_icp_ransac_high
 # R_err_teaser, t_err_teaser
 # R_err_icp_teaser, t_err_icp_teaser
 # teaser_tim_inlier_rate
-log_results = np.zeros((nrPairs,1+2+2+2+2+1))
+# teaser_best_subopt
+# fitness_ransac_low, fitness_icp_ransac_low, 
+# fitness_ransac_high, fitness_icp_ransac_high, 
+# fitness_teaser, fitness_icp_teaser
+log_results = np.zeros((nrPairs,1+2+2+2+2+2+2+1+6+1))
 for pair_idx, pair in enumerate(pairs_register):
     A_path = pair[0]
     B_path = pair[1]
@@ -80,29 +87,59 @@ for pair_idx, pair in enumerate(pairs_register):
     assert (A_corr.shape[1] == N) and (B_corr.shape[1]), 'A_corr and B_corr wrong dimension'
     print(f'Created {N} all-to-all correspondences.')
 
-    # use RANSAC to register
-    ransac_T = ransac_registration(A_corr,B_corr,
-                                   NOISE_BOUND,RANSAC_MAXITERS)
-    R_ransac = ransac_T[:3,:3]
-    t_ransac = ransac_T[:3,3]
-    # compute pose error of RANSAC
-    R_err_ransac = getRotationError(R_gt,R_ransac)
-    t_err_ransac = getTranslationError(t_gt,t_ransac)
-    print(f'RANSAC: R_err: {R_err_ransac}[deg], t_err: {t_err_ransac}[m]')
 
-    # refine with ICP after RANSAC
+    # use RANSAC_LOW to register
+    ransac_T = ransac_registration(A_corr,B_corr,
+                                   NOISE_BOUND,RANSAC_MAXITERS_LOW)
+    R_ransac_low = ransac_T[:3,:3]
+    t_ransac_low = ransac_T[:3,3]
+    fitness_ransac_low = computeFitnessScore(A_pcd_ds,B_pcd_ds,NOISE_BOUND,ransac_T)
+    # compute pose error of RANSAC
+    R_err_ransac_low = getRotationError(R_gt,R_ransac_low)
+    t_err_ransac_low = getTranslationError(t_gt,t_ransac_low)
+    print(f'RANSAC-LOW: R_err: {R_err_ransac_low}[deg], t_err: {t_err_ransac_low}[m], fitness: {fitness_ransac_low}.')
+
+    # refine with ICP after RANSAC-LOW
     trans_init = np.identity(4)
-    trans_init[:3,:3] = R_ransac
-    trans_init[:3,3] = t_ransac
+    trans_init[:3,:3] = R_ransac_low
+    trans_init[:3,3] = t_ransac_low
     icp_sol = o3d.registration.registration_icp(
             A_pcd, B_pcd, ICP_TH, trans_init,
             o3d.registration.TransformationEstimationPointToPoint(),
             o3d.registration.ICPConvergenceCriteria(max_iteration=500))
-    R_icp_ransac = icp_sol.transformation[:3,:3]
-    t_icp_ransac = icp_sol.transformation[:3,3]
-    R_err_icp_ransac = getRotationError(R_gt,R_icp_ransac)
-    t_err_icp_ransac = getTranslationError(t_gt,t_icp_ransac)
-    print(f'ICP-RANSAC: R_err: {R_err_icp_ransac}[deg], t_err: {t_err_icp_ransac}[m]')
+    R_icp_ransac_low = icp_sol.transformation[:3,:3]
+    t_icp_ransac_low = icp_sol.transformation[:3,3]
+    R_err_icp_ransac_low = getRotationError(R_gt,R_icp_ransac_low)
+    t_err_icp_ransac_low = getTranslationError(t_gt,t_icp_ransac_low)
+    fitness_icp_ransac_low = computeFitnessScore(A_pcd,B_pcd,ICP_TH,icp_sol.transformation)
+    print(f'ICP-RANSAC-LOW: R_err: {R_err_icp_ransac_low}[deg], t_err: {t_err_icp_ransac_low}[m], fitness: {fitness_icp_ransac_low}.')
+
+
+    # use RANSAC_HIGH to register
+    ransac_T = ransac_registration(A_corr,B_corr,
+                                   NOISE_BOUND,RANSAC_MAXITERS_HIGH)
+    R_ransac_high = ransac_T[:3,:3]
+    t_ransac_high = ransac_T[:3,3]
+    fitness_ransac_high = computeFitnessScore(A_pcd_ds,B_pcd_ds,NOISE_BOUND,ransac_T)
+    # compute pose error of RANSAC
+    R_err_ransac_high = getRotationError(R_gt,R_ransac_high)
+    t_err_ransac_high = getTranslationError(t_gt,t_ransac_high)
+    print(f'RANSAC-HIGH: R_err: {R_err_ransac_high}[deg], t_err: {t_err_ransac_high}[m], fitness: {fitness_ransac_high}.')
+
+    # refine with ICP after RANSAC
+    trans_init = np.identity(4)
+    trans_init[:3,:3] = R_ransac_high
+    trans_init[:3,3] = t_ransac_high
+    icp_sol = o3d.registration.registration_icp(
+            A_pcd, B_pcd, ICP_TH, trans_init,
+            o3d.registration.TransformationEstimationPointToPoint(),
+            o3d.registration.ICPConvergenceCriteria(max_iteration=500))
+    fitness_icp_ransac_high = computeFitnessScore(A_pcd,B_pcd,ICP_TH,icp_sol.transformation)
+    R_icp_ransac_high = icp_sol.transformation[:3,:3]
+    t_icp_ransac_high = icp_sol.transformation[:3,3]
+    R_err_icp_ransac_high = getRotationError(R_gt,R_icp_ransac_high)
+    t_err_icp_ransac_high = getTranslationError(t_gt,t_icp_ransac_high)
+    print(f'ICP-RANSAC-HIGH: R_err: {R_err_icp_ransac_high}[deg], t_err: {t_err_icp_ransac_high}[m], fitness: {fitness_icp_ransac_high}.')
 
     # use TEASER to register
     # create a TEASER solver
@@ -121,14 +158,30 @@ for pair_idx, pair in enumerate(pairs_register):
     solution = solver.getSolution()
     R_teaser = solution.rotation
     t_teaser = solution.translation
+    teaser_T = Rt2T(R_teaser,t_teaser)
 
+    fitness_teaser = computeFitnessScore(A_pcd_ds,B_pcd_ds,NOISE_BOUND,teaser_T)
+    # certify TEASER's result (rotation part)
     A_TIMs = solver.getMaxCliqueSrcTIMs()
-    nrRotationInliers = np.sum(solver.getRotationInliersMask())
-    teaser_tim_inlier_ratio = float(nrRotationInliers)/float(A_TIMs.shape[1])
+    B_TIMs = solver.getMaxCliqueDstTIMs()
+    theta_TIMs_raw = solver.getRotationInliersMask()
+    nrRotationInliers = np.sum(theta_TIMs_raw)
+    theta_TIMs = getBinaryTheta(theta_TIMs_raw)
+    certifier_params = teaserpp_python.DRSCertifier.Params()
+    certifier_params.cbar2 = 1.0
+    certifier_params.noise_bound = 2*NOISE_BOUND
+    certifier_params.sub_optimality = 1e-3
+    certifier_params.max_iterations = 1e3
+    certifier_params.gamma_tau = 2.0
+    certifier = teaserpp_python.DRSCertifier(certifier_params)
+    certificate = certifier.certify(R_teaser,A_TIMs,B_TIMs,theta_TIMs)
+    teaser_best_subopt = certificate.best_suboptimality
+
     # compute pose error of TEASER
+    teaser_tim_inlier_ratio = float(nrRotationInliers)/float(A_TIMs.shape[1])
     R_err_teaser = getRotationError(R_gt,R_teaser)
     t_err_teaser = getTranslationError(t_gt,t_teaser)
-    print(f'TEASER: R_err: {R_err_teaser}[deg], t_err: {t_err_teaser}[m], tim_inlier_ratio: {teaser_tim_inlier_ratio}.')
+    print(f'TEASER: R_err: {R_err_teaser}[deg], t_err: {t_err_teaser}[m], fitness: {fitness_teaser}, tim_inlier_ratio: {teaser_tim_inlier_ratio}, best_subopt: {teaser_best_subopt}.')
 
     # refine with ICP after TEASER
     trans_init = np.identity(4)
@@ -138,18 +191,28 @@ for pair_idx, pair in enumerate(pairs_register):
             A_pcd, B_pcd, ICP_TH, trans_init,
             o3d.registration.TransformationEstimationPointToPoint(),
             o3d.registration.ICPConvergenceCriteria(max_iteration=500))
+    fitness_icp_teaser = computeFitnessScore(A_pcd,B_pcd,ICP_TH,icp_sol.transformation)
     R_icp_teaser = icp_sol.transformation[:3,:3]
     t_icp_teaser = icp_sol.transformation[:3,3]
     R_err_icp_teaser = getRotationError(R_gt,R_icp_teaser)
     t_err_icp_teaser = getTranslationError(t_gt,t_icp_teaser)
-    print(f'ICP-TEASER: R_err: {R_err_icp_teaser}[deg], t_err: {t_err_icp_teaser}[m]')
+    print(f'ICP-TEASER: R_err: {R_err_icp_teaser}[deg], t_err: {t_err_icp_teaser}[m], fitness: {fitness_icp_teaser}.')
 
     # log results
     log_results[pair_idx,:] = np.asarray([overlap,
-                                          R_err_ransac,t_err_ransac,
-                                          R_err_icp_ransac,t_err_icp_ransac,
+                                          R_err_ransac_low,t_err_ransac_low,
+                                          R_err_icp_ransac_low,t_err_icp_ransac_low,
+                                          R_err_ransac_high,t_err_ransac_high,
+                                          R_err_icp_ransac_high,t_err_icp_ransac_high,
                                           R_err_teaser,t_err_teaser,
                                           R_err_icp_teaser,t_err_icp_teaser,
-                                          teaser_tim_inlier_ratio])
+                                          teaser_tim_inlier_ratio,
+                                          teaser_best_subopt,
+                                          fitness_ransac_low,
+                                          fitness_icp_ransac_low,
+                                          fitness_ransac_high,
+                                          fitness_icp_ransac_high,
+                                          fitness_teaser,
+                                          fitness_icp_teaser])
 
-np.savetxt('results/results_70.txt',log_results,fmt='%.5f',delimiter=',')
+np.savetxt('results/results_70_full.txt',log_results,fmt='%.5f',delimiter=',')

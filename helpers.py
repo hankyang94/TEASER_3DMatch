@@ -96,6 +96,17 @@ def ransac_registration(xyz0,xyz1,distance_threshold,iterations):
         o3d.registration.RANSACConvergenceCriteria(iterations, 40000000))
     return result.transformation
 
+def computeFitnessScore(pcd0,pcd1,distance_threshold,transformation):
+    evaluation = o3d.registration.evaluate_registration(pcd0, pcd1, distance_threshold, transformation)
+    return evaluation.fitness
+
+def Rt2T(R,t):
+    T = np.identity(4)
+    T[:3,:3] = R
+    T[:3,3] = t
+    return T
+
+
 if __name__ == "__main__":
     threedmatch_path = '../../Datasets/threedmatch'
     pairs_all_info, pairs_30_info, pairs_50_info, pairs_70_info = \
