@@ -106,6 +106,31 @@ def Rt2T(R,t):
     T[:3,3] = t
     return T
 
+def weightedProcrustes(xyzA,xyzB,weights):
+    '''
+    weighted procrustes
+    xyzA and xyzB are numpy arrays of dimension (3,N)
+    weights is a numpy array of dimension (N)
+    '''
+    N = xyzA.shape[1]
+    centerA = np.matmul(xyzA,weights) / np.sum(weights)
+    centerB = np.matmul(xyzB,weights) / np.sum(weights)
+
+    xyzA_ref = (xyzA - centerA[:,None]) * np.sqrt(weights)
+    xyzB_ref = (xyzB - centerB[:,None]) * np.sqrt(weights)
+
+    # compute rotation from SVD (Wahba problem)
+    M = np.zeros([3,3])
+    for i in range(N):
+        ai = xyzA_ref[:,i]
+        bi = xyzB_ref[:,i]
+        M = M + np.outer(bi,ai)
+    U,S,Vh = np.linalg.svd(M)
+    R = U @ np.diag([1,1,np.linalg.det(U)*np.linalg.det(Vh)]) @ Vh
+
+    # recover translation
+    t = centerB - R @ centerA
+    return R, t
 
 if __name__ == "__main__":
     threedmatch_path = '../../Datasets/threedmatch'

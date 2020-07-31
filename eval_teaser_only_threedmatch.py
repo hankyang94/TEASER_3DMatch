@@ -1,9 +1,6 @@
 # use brute-force correspondences to register 3D Match training data
 # enumerate all possible pairs of the training data
-# compare two algorithms:
-# TEASER
-# RANSAC
-
+# use TEASER only, no RANSAC
 import os
 import numpy as np
 import open3d as o3d
@@ -38,19 +35,14 @@ t_gt = np.zeros(3)
 nrPairs = len(pairs_register)
 print(f'Total number of pairs to register: {nrPairs}.')
 # things to log:
-# overlap rate
-# R_err_ransac_low, t_err_ransac_low
-# R_err_icp_ransac_low, t_err_icp_ransac_low
-# R_err_ransac_high, t_err_ransac_high
-# R_err_icp_ransac_high, t_err_icp_ransac_high
-# R_err_teaser, t_err_teaser
-# R_err_icp_teaser, t_err_icp_teaser
-# teaser_tim_inlier_rate
-# teaser_best_subopt
-# fitness_ransac_low, fitness_icp_ransac_low, 
-# fitness_ransac_high, fitness_icp_ransac_high, 
-# fitness_teaser, fitness_icp_teaser
-log_results = np.zeros((nrPairs,1+2+2+2+2+2+2+1+6+1))
+# overlap rate 1
+# R_err_teaser, t_err_teaser 2
+# R_err_icp_teaser, t_err_icp_teaser 2
+# teaser_tim_inlier_rate 1
+# teaser_best_subopt 1
+# teaser_nrMCInliers 1
+# fitness_teaser, fitness_icp_teaser 2
+log_results = np.zeros((nrPairs,1+2+2+1+1+1+2))
 for pair_idx, pair in enumerate(pairs_register):
     A_path = pair[0]
     B_path = pair[1]
@@ -73,7 +65,7 @@ for pair_idx, pair in enumerate(pairs_register):
     B_pcd.colors = o3d.utility.Vector3dVector(B_rgb)
 
 
-    # downsample A and B
+    # downsample A and B until number of points is small enough
     N = 2*ALL_ALL_CORR_LIMIT
     VOXEL_SIZE = VOXEL_SIZE_INIT - VOXEL_SIZE_STEP
     while N > ALL_ALL_CORR_LIMIT:
@@ -95,60 +87,6 @@ for pair_idx, pair in enumerate(pairs_register):
     assert (A_corr.shape[1] == N) and (B_corr.shape[1]), 'A_corr and B_corr wrong dimension'
     print(f'Created {N} all-to-all correspondences.')
 
-
-    # use RANSAC_LOW to register
-    ransac_T = ransac_registration(A_corr,B_corr,
-                                   NOISE_BOUND,RANSAC_MAXITERS_LOW)
-    R_ransac_low = ransac_T[:3,:3]
-    t_ransac_low = ransac_T[:3,3]
-    fitness_ransac_low = computeFitnessScore(A_pcd_ds,B_pcd_ds,NOISE_BOUND,ransac_T)
-    # compute pose error of RANSAC
-    R_err_ransac_low = getRotationError(R_gt,R_ransac_low)
-    t_err_ransac_low = getTranslationError(t_gt,t_ransac_low)
-    print(f'RANSAC-LOW: R_err: {R_err_ransac_low}[deg], t_err: {t_err_ransac_low}[m], fitness: {fitness_ransac_low}.')
-
-    # refine with ICP after RANSAC-LOW
-    trans_init = np.identity(4)
-    trans_init[:3,:3] = R_ransac_low
-    trans_init[:3,3] = t_ransac_low
-    icp_sol = o3d.registration.registration_icp(
-            A_pcd, B_pcd, ICP_TH, trans_init,
-            o3d.registration.TransformationEstimationPointToPoint(),
-            o3d.registration.ICPConvergenceCriteria(max_iteration=ICP_MAXITERS))
-    R_icp_ransac_low = icp_sol.transformation[:3,:3]
-    t_icp_ransac_low = icp_sol.transformation[:3,3]
-    R_err_icp_ransac_low = getRotationError(R_gt,R_icp_ransac_low)
-    t_err_icp_ransac_low = getTranslationError(t_gt,t_icp_ransac_low)
-    fitness_icp_ransac_low = computeFitnessScore(A_pcd,B_pcd,ICP_TH,icp_sol.transformation)
-    print(f'ICP-RANSAC-LOW: R_err: {R_err_icp_ransac_low}[deg], t_err: {t_err_icp_ransac_low}[m], fitness: {fitness_icp_ransac_low}.')
-
-
-    # use RANSAC_HIGH to register
-    ransac_T = ransac_registration(A_corr,B_corr,
-                                   NOISE_BOUND,RANSAC_MAXITERS_HIGH)
-    R_ransac_high = ransac_T[:3,:3]
-    t_ransac_high = ransac_T[:3,3]
-    fitness_ransac_high = computeFitnessScore(A_pcd_ds,B_pcd_ds,NOISE_BOUND,ransac_T)
-    # compute pose error of RANSAC
-    R_err_ransac_high = getRotationError(R_gt,R_ransac_high)
-    t_err_ransac_high = getTranslationError(t_gt,t_ransac_high)
-    print(f'RANSAC-HIGH: R_err: {R_err_ransac_high}[deg], t_err: {t_err_ransac_high}[m], fitness: {fitness_ransac_high}.')
-
-    # refine with ICP after RANSAC
-    trans_init = np.identity(4)
-    trans_init[:3,:3] = R_ransac_high
-    trans_init[:3,3] = t_ransac_high
-    icp_sol = o3d.registration.registration_icp(
-            A_pcd, B_pcd, ICP_TH, trans_init,
-            o3d.registration.TransformationEstimationPointToPoint(),
-            o3d.registration.ICPConvergenceCriteria(max_iteration=ICP_MAXITERS))
-    fitness_icp_ransac_high = computeFitnessScore(A_pcd,B_pcd,ICP_TH,icp_sol.transformation)
-    R_icp_ransac_high = icp_sol.transformation[:3,:3]
-    t_icp_ransac_high = icp_sol.transformation[:3,3]
-    R_err_icp_ransac_high = getRotationError(R_gt,R_icp_ransac_high)
-    t_err_icp_ransac_high = getTranslationError(t_gt,t_icp_ransac_high)
-    print(f'ICP-RANSAC-HIGH: R_err: {R_err_icp_ransac_high}[deg], t_err: {t_err_icp_ransac_high}[m], fitness: {fitness_icp_ransac_high}.')
-
     # use TEASER to register
     # create a TEASER solver
     solver_params = teaserpp_python.RobustRegistrationSolver.Params()
@@ -168,7 +106,7 @@ for pair_idx, pair in enumerate(pairs_register):
     t_teaser = solution.translation
     teaser_T = Rt2T(R_teaser,t_teaser)
     # obtain number of inliers survived maximum clique
-    nrMCInliers = len(solver.getInlierMaxClique())
+    teaser_nrMCInliers = len(solver.getInlierMaxClique())
 
     fitness_teaser = computeFitnessScore(A_pcd_ds,B_pcd_ds,NOISE_BOUND,teaser_T)
     # certify TEASER's result (rotation part)
@@ -210,19 +148,12 @@ for pair_idx, pair in enumerate(pairs_register):
 
     # log results
     log_results[pair_idx,:] = np.asarray([overlap,
-                                          R_err_ransac_low,t_err_ransac_low,
-                                          R_err_icp_ransac_low,t_err_icp_ransac_low,
-                                          R_err_ransac_high,t_err_ransac_high,
-                                          R_err_icp_ransac_high,t_err_icp_ransac_high,
                                           R_err_teaser,t_err_teaser,
                                           R_err_icp_teaser,t_err_icp_teaser,
                                           teaser_tim_inlier_ratio,
                                           teaser_best_subopt,
-                                          fitness_ransac_low,
-                                          fitness_icp_ransac_low,
-                                          fitness_ransac_high,
-                                          fitness_icp_ransac_high,
+                                          teaser_nrMCInliers,
                                           fitness_teaser,
                                           fitness_icp_teaser])
 
-np.savetxt('results/results_70_full.txt',log_results,fmt='%.5f',delimiter=',')
+# np.savetxt('results/results_70_full.txt',log_results,fmt='%.5f',delimiter=',')
