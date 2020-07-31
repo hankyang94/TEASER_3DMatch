@@ -38,19 +38,22 @@ t_gt = np.zeros(3)
 nrPairs = len(pairs_register)
 print(f'Total number of pairs to register: {nrPairs}.')
 # things to log:
-# overlap rate
-# R_err_ransac_low, t_err_ransac_low
-# R_err_icp_ransac_low, t_err_icp_ransac_low
-# R_err_ransac_high, t_err_ransac_high
-# R_err_icp_ransac_high, t_err_icp_ransac_high
-# R_err_teaser, t_err_teaser
-# R_err_icp_teaser, t_err_icp_teaser
-# teaser_tim_inlier_rate
-# teaser_best_subopt
-# fitness_ransac_low, fitness_icp_ransac_low, 
-# fitness_ransac_high, fitness_icp_ransac_high, 
-# fitness_teaser, fitness_icp_teaser
-log_results = np.zeros((nrPairs,1+2+2+2+2+2+2+1+6+1))
+# overlap rate 1
+# NNA, NNB, N 3
+# R_err_ransac_low, t_err_ransac_low 2
+# R_err_icp_ransac_low, t_err_icp_ransac_low 2
+# R_err_ransac_high, t_err_ransac_high 2
+# R_err_icp_ransac_high, t_err_icp_ransac_high 2
+# R_err_teaser, t_err_teaser 2
+# R_err_icp_teaser, t_err_icp_teaser 2
+# teaser_tim_inlier_rate 1
+# teaser_best_subopt 1
+# teaser_nrMCInliers 1
+# fitness_ransac_low, fitness_icp_ransac_low,  2
+# fitness_ransac_high, fitness_icp_ransac_high,  2
+# fitness_teaser, fitness_icp_teaser 2
+nrCols = 1+3+2+2+2+2+2+2+1+1+1+2+2+2
+log_results = np.zeros((nrPairs,nrCols))
 for pair_idx, pair in enumerate(pairs_register):
     A_path = pair[0]
     B_path = pair[1]
@@ -61,10 +64,12 @@ for pair_idx, pair in enumerate(pairs_register):
     cloudA = np.load(os.path.join(threedmatch_path,A_path))
     cloudB = np.load(os.path.join(threedmatch_path,B_path))
     A_xyz = cloudA['pcd']
+    NNA = A_xyz.shape[0]
+    NNB = B_xyz.shape[0]
     A_rgb = cloudA['color']
     B_xyz = cloudB['pcd']
     B_rgb = cloudB['color']
-    print(f'Before downsample: # of points in A: {A_xyz.shape[0]}, # of points in B: {B_xyz.shape[0]}.')
+    print(f'Before downsample: # of points in A: {NNA}, # of points in B: {NNB}.')
     A_pcd = o3d.geometry.PointCloud()
     B_pcd = o3d.geometry.PointCloud()
     A_pcd.points = o3d.utility.Vector3dVector(A_xyz)
@@ -168,7 +173,7 @@ for pair_idx, pair in enumerate(pairs_register):
     t_teaser = solution.translation
     teaser_T = Rt2T(R_teaser,t_teaser)
     # obtain number of inliers survived maximum clique
-    nrMCInliers = len(solver.getInlierMaxClique())
+    teaser_nrMCInliers = len(solver.getInlierMaxClique())
 
     fitness_teaser = computeFitnessScore(A_pcd_ds,B_pcd_ds,NOISE_BOUND,teaser_T)
     # certify TEASER's result (rotation part)
@@ -210,6 +215,7 @@ for pair_idx, pair in enumerate(pairs_register):
 
     # log results
     log_results[pair_idx,:] = np.asarray([overlap,
+                                          NNA,NNB,N,
                                           R_err_ransac_low,t_err_ransac_low,
                                           R_err_icp_ransac_low,t_err_icp_ransac_low,
                                           R_err_ransac_high,t_err_ransac_high,
@@ -218,6 +224,7 @@ for pair_idx, pair in enumerate(pairs_register):
                                           R_err_icp_teaser,t_err_icp_teaser,
                                           teaser_tim_inlier_ratio,
                                           teaser_best_subopt,
+                                          teaser_nrMCInliers,
                                           fitness_ransac_low,
                                           fitness_icp_ransac_low,
                                           fitness_ransac_high,
