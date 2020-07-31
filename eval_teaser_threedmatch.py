@@ -29,7 +29,7 @@ pairs_all, pairs_30, pairs_50, pairs_70 = \
     get3DMatchTrainPairs(threedmatch_path)
 
 # choose the catagory of pairs to register
-pairs_register = [pairs_70[1136]]
+pairs_register = pairs_70
 
 # start registering
 # GT transformation (A and B are already registered)
@@ -64,11 +64,11 @@ for pair_idx, pair in enumerate(pairs_register):
     cloudA = np.load(os.path.join(threedmatch_path,A_path))
     cloudB = np.load(os.path.join(threedmatch_path,B_path))
     A_xyz = cloudA['pcd']
-    NNA = A_xyz.shape[0]
-    NNB = B_xyz.shape[0]
     A_rgb = cloudA['color']
     B_xyz = cloudB['pcd']
     B_rgb = cloudB['color']
+    NNA = A_xyz.shape[0]
+    NNB = B_xyz.shape[0]
     print(f'Before downsample: # of points in A: {NNA}, # of points in B: {NNB}.')
     A_pcd = o3d.geometry.PointCloud()
     B_pcd = o3d.geometry.PointCloud()
